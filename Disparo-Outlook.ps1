@@ -7,6 +7,8 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 $Script:WorkbookPath = ''
 $Script:AttachmentFolder = ''
 $Script:AttachmentMode = 'Resumo Município-UF'
+$Script:DistributionFolder = ''
+$Script:InformativeFolder = ''
 $Script:InformativeFile1 = ''
 $Script:InformativeFile2 = ''
 $Script:Rows = New-Object System.Collections.Generic.List[object]
@@ -295,9 +297,21 @@ function Build-PreparedRows {
         $uf = if ($UFColumn) { [string]$raw.Values[$UFColumn] } else { '' }
         $cc = if ($CCColumn) { [string]$raw.Values[$CCColumn] } else { '' }
         $attachments = @()
-        $municipalAttachments = @(Find-Attachments -City $city -UF $uf)
+        $summaryAttachments = @()
+        $distributionAttachments = @()
+        if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $summaryAttachments = @(Find-FlatMunicipalFiles -RootFolder $Script:AttachmentFolder -City $city -UF $uf)
+            $distributionAttachments = @(Find-DistributionAttachments -City $city -RootFolder $Script:DistributionFolder)
+            $municipalAttachments = @($summaryAttachments + $distributionAttachments)
+        }
+        else {
+            $municipalAttachments = @(Find-Attachments -City $city -UF $uf)
+        }
         $attachments += @($municipalAttachments)
         $attachments += @($commonAttachments)
+        if (-not $uf -and $Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo' -and $Script:AttachmentFolder) {
+            $uf = Infer-UF-FromPath $Script:AttachmentFolder
+        }
         if (-not $uf -and $Script:AttachmentMode -eq 'Distribuição por subpastas' -and $Script:AttachmentFolder) {
             $rootName = Split-Path -Leaf $Script:AttachmentFolder
             if ($rootName -match '^[A-Za-z]{2}$') { $uf = $rootName.ToUpperInvariant() }
@@ -314,6 +328,8 @@ function Build-PreparedRows {
                 UF                         = $uf
                 Attachments                = $attachments
                 MunicipalAttachmentCount   = $municipalAttachments.Count
+                SummaryAttachmentCount     = $summaryAttachments.Count
+                DistributionAttachmentCount = $distributionAttachments.Count
                 InformativeAttachmentCount = $commonAttachments.Count
                 Values                     = $raw.Values
             }) | Out-Null
@@ -323,6 +339,14 @@ function Build-PreparedRows {
 
 function Get-InformativeFiles {
     $files = @()
+    if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+        if (![string]::IsNullOrWhiteSpace($Script:InformativeFolder) -and (Test-Path -LiteralPath $Script:InformativeFolder -PathType Container)) {
+            foreach ($file in Get-ChildItem -LiteralPath $Script:InformativeFolder -File -Recurse | Sort-Object FullName) {
+                $files += $file.FullName
+            }
+        }
+        return $files
+    }
     foreach ($path in @(
             $Script:InformativeFile1,
             $Script:InformativeFile2
@@ -373,17 +397,43 @@ function Infer-UF {
     return ''
 }
 
+function Infer-UF-FromPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $parts = @()
+    $current = $Path
+    while ($current) {
+        $leaf = Split-Path -Leaf $current
+        if ($leaf) { $parts += $leaf }
+        $parent = Split-Path -Parent $current
+        if ($parent -eq $current) { break }
+        $current = $parent
+    }
+    foreach ($part in $parts) {
+        if ($part -match '(?i)(?:^|[^A-Z])([A-Z]{2})(?:$|[^A-Z])') { return $matches[1].ToUpperInvariant() }
+    }
+    return ''
+}
+
 function Find-Attachments {
     param([string]$City, [string]$UF)
+    if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+        return Find-ThreeTypeAttachments -City $City -UF $UF
+    }
     if ($Script:AttachmentMode -eq 'Distribuição por subpastas') {
         return Find-DistributionAttachments -City $City
     }
+    return Find-FlatMunicipalFiles -RootFolder $Script:AttachmentFolder -City $City -UF $UF
+}
+
+function Find-FlatMunicipalFiles {
+    param([string]$RootFolder, [string]$City, [string]$UF)
     $foundFiles = @()
-    if ([string]::IsNullOrWhiteSpace($Script:AttachmentFolder)) { return $foundFiles }
-    if (-not (Test-Path -LiteralPath $Script:AttachmentFolder)) { return $foundFiles }
+    if ([string]::IsNullOrWhiteSpace($RootFolder)) { return $foundFiles }
+    if (-not (Test-Path -LiteralPath $RootFolder -PathType Container)) { return $foundFiles }
     $cityNorm = Normalize-Text $City
     $ufNorm = Normalize-Text $UF
-    foreach ($file in Get-ChildItem -LiteralPath $Script:AttachmentFolder -File) {
+    foreach ($file in Get-ChildItem -LiteralPath $RootFolder -File -Recurse) {
         $baseNorm = Normalize-Text $file.BaseName
         if (-not $cityNorm) { continue }
         $cityOk = $baseNorm.StartsWith($cityNorm) -or $baseNorm.Contains($cityNorm)
@@ -395,14 +445,14 @@ function Find-Attachments {
 }
 
 function Find-DistributionAttachments {
-    param([string]$City)
+    param([string]$City, [string]$RootFolder = $Script:AttachmentFolder)
     $foundFiles = @()
-    if ([string]::IsNullOrWhiteSpace($Script:AttachmentFolder)) { return $foundFiles }
-    if (-not (Test-Path -LiteralPath $Script:AttachmentFolder -PathType Container)) { return $foundFiles }
+    if ([string]::IsNullOrWhiteSpace($RootFolder)) { return $foundFiles }
+    if (-not (Test-Path -LiteralPath $RootFolder -PathType Container)) { return $foundFiles }
     $cityNorm = Normalize-Text $City
     if (-not $cityNorm) { return $foundFiles }
 
-    $folders = @(Get-ChildItem -LiteralPath $Script:AttachmentFolder -Directory)
+    $folders = @(Get-ChildItem -LiteralPath $RootFolder -Directory)
     $selectedFolder = $folders | Where-Object { (Normalize-Text $_.Name) -eq $cityNorm } | Select-Object -First 1
     if (-not $selectedFolder) {
         $selectedFolder = $folders | Where-Object {
@@ -416,6 +466,16 @@ function Find-DistributionAttachments {
         $foundFiles += $file.FullName
     }
     return $foundFiles
+}
+
+function Find-ThreeTypeAttachments {
+    param([string]$City, [string]$UF)
+    $files = @()
+    $summaryFiles = @(Find-FlatMunicipalFiles -RootFolder $Script:AttachmentFolder -City $City -UF $UF)
+    $distributionFiles = @(Find-DistributionAttachments -City $City -RootFolder $Script:DistributionFolder)
+    $files += $summaryFiles
+    $files += $distributionFiles
+    return @($files | Where-Object { $_ } | Sort-Object -Unique)
 }
 
 function Get-EditorHtml {
@@ -721,6 +781,15 @@ function Log-Line {
     $txtLog.AppendText((Get-Date -Format 'HH:mm:ss') + ' - ' + $Message + [Environment]::NewLine)
 }
 
+function Test-RowReady {
+    param($Row)
+    if (-not $Row.To) { return $false }
+    if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+        return ($Row.SummaryAttachmentCount -ge 1 -and $Row.DistributionAttachmentCount -ge 1 -and $Row.InformativeAttachmentCount -ge 1)
+    }
+    return $true
+}
+
 function Refresh-Preview {
     $grid.Rows.Clear()
     if (-not $cmbEmail.Text -or -not $cmbCity.Text) { return }
@@ -728,6 +797,13 @@ function Refresh-Preview {
     foreach ($row in $Script:Rows) {
         $status = if (-not $row.To) {
             'Sem e-mail'
+        }
+        elseif ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $missing = @()
+            if ($row.SummaryAttachmentCount -lt 1) { $missing += 'resumo' }
+            if ($row.DistributionAttachmentCount -lt 1) { $missing += 'distribuição' }
+            if ($row.InformativeAttachmentCount -lt 1) { $missing += 'informativo' }
+            if ($missing.Count -gt 0) { 'Sem ' + ($missing -join ', ') } else { 'OK' }
         }
         elseif ($row.Attachments.Count -lt 1) {
             'Sem anexo'
@@ -853,6 +929,7 @@ $cmbAttachmentMode.Size = New-Object Drawing.Size(300, 24)
 $cmbAttachmentMode.DropDownStyle = 'DropDownList'
 [void]$cmbAttachmentMode.Items.Add('Resumo Município-UF')
 [void]$cmbAttachmentMode.Items.Add('Distribuição por subpastas')
+[void]$cmbAttachmentMode.Items.Add('Resumo + Distribuição + Informativo')
 $cmbAttachmentMode.SelectedItem = $Script:AttachmentMode
 $grpAttach.Controls.Add($cmbAttachmentMode)
 
@@ -932,6 +1009,29 @@ $defaultInformative1 = 'C:\Users\jonatas.chaves\Downloads\ENEM - 26 -  INFORMATI
 if (Test-Path -LiteralPath $defaultInformative1 -PathType Leaf) {
     $Script:InformativeFile1 = $defaultInformative1
     $txtInformative1.Text = $Script:InformativeFile1
+}
+
+function Update-AttachmentModeUi {
+    if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+        $grpAttach.Text = '3. Anexos por município'
+        $lblAttachmentFolder.Text = 'Resumo:'
+        $lblInformative1.Text = 'Distribuição:'
+        $lblInformative2.Text = 'Informativo:'
+        $txtInformative1.Text = $Script:DistributionFolder
+        $txtInformative2.Text = $Script:InformativeFolder
+        $btnInformative1.Text = 'Selecionar...'
+        $btnInformative2.Text = 'Selecionar...'
+        return
+    }
+
+    $grpAttach.Text = '3. Anexos (Opcionais)'
+    $lblAttachmentFolder.Text = 'Pasta dos arquivos:'
+    $lblInformative1.Text = 'Informativo 1:'
+    $lblInformative2.Text = 'Informativo 2:'
+    $txtInformative1.Text = $Script:InformativeFile1
+    $txtInformative2.Text = $Script:InformativeFile2
+    $btnInformative1.Text = 'Selecionar...'
+    $btnInformative2.Text = 'Selecionar...'
 }
 
 $grpPersonal = New-Object Windows.Forms.GroupBox
@@ -1208,6 +1308,21 @@ $btnAttachmentFolder.Add_Click({
 
 $cmbAttachmentMode.Add_SelectedIndexChanged({
         $Script:AttachmentMode = [string]$cmbAttachmentMode.SelectedItem
+        if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $defaultSummaryFolder = 'C:\Users\jonatas.chaves\Downloads\RESUMOS.CE\RESUMOS.CE'
+            $defaultDistributionFolder = 'C:\Users\jonatas.chaves\Downloads\CE DISTRIBUIÇÃO\CE'
+            $defaultInformativeFolder = 'C:\Users\jonatas.chaves\Downloads\Informativo'
+            if ([string]::IsNullOrWhiteSpace($Script:AttachmentFolder) -and (Test-Path -LiteralPath $defaultSummaryFolder -PathType Container)) {
+                $Script:AttachmentFolder = $defaultSummaryFolder
+                $txtAttachmentFolder.Text = $Script:AttachmentFolder
+            }
+            if ([string]::IsNullOrWhiteSpace($Script:DistributionFolder) -and (Test-Path -LiteralPath $defaultDistributionFolder -PathType Container)) {
+                $Script:DistributionFolder = $defaultDistributionFolder
+            }
+            if ([string]::IsNullOrWhiteSpace($Script:InformativeFolder) -and (Test-Path -LiteralPath $defaultInformativeFolder -PathType Container)) {
+                $Script:InformativeFolder = $defaultInformativeFolder
+            }
+        }
         if ($Script:AttachmentMode -eq 'Distribuição por subpastas' -and [string]::IsNullOrWhiteSpace($Script:AttachmentFolder)) {
             $defaultDistributionFolder = 'C:\Users\jonatas.chaves\Downloads\RelatoriosDetalhado\AM'
             if (Test-Path -LiteralPath $defaultDistributionFolder -PathType Container) {
@@ -1215,6 +1330,7 @@ $cmbAttachmentMode.Add_SelectedIndexChanged({
                 $txtAttachmentFolder.Text = $Script:AttachmentFolder
             }
         }
+        Update-AttachmentModeUi
         Refresh-Preview
         Log-Line "Módulo de anexos selecionado: $($Script:AttachmentMode)."
     })
@@ -1227,6 +1343,20 @@ $btnClearFolder.Add_Click({
     })
 
 $btnInformative1.Add_Click({
+        if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $dialog = New-Object Windows.Forms.FolderBrowserDialog
+            $dialog.Description = 'Selecionar pasta de distribuição'
+            if ($Script:DistributionFolder -and (Test-Path -LiteralPath $Script:DistributionFolder -PathType Container)) {
+                $dialog.SelectedPath = $Script:DistributionFolder
+            }
+            if ($dialog.ShowDialog() -eq 'OK') {
+                $Script:DistributionFolder = $dialog.SelectedPath
+                $txtInformative1.Text = $Script:DistributionFolder
+                Refresh-Preview
+                Log-Line "Pasta de distribuição selecionada."
+            }
+            return
+        }
         $dialog = New-Object Windows.Forms.OpenFileDialog
         $dialog.Filter = 'Arquivos PDF (*.pdf)|*.pdf|Todos os arquivos (*.*)|*.*'
         $dialog.Title = 'Selecionar informativo 1'
@@ -1240,6 +1370,13 @@ $btnInformative1.Add_Click({
     })
 
 $btnClearInformative1.Add_Click({
+        if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $Script:DistributionFolder = ''
+            $txtInformative1.Text = ''
+            Refresh-Preview
+            Log-Line "Pasta de distribuição removida."
+            return
+        }
         $Script:InformativeFile1 = ''
         $txtInformative1.Text = ''
         Refresh-Preview
@@ -1247,6 +1384,20 @@ $btnClearInformative1.Add_Click({
     })
 
 $btnInformative2.Add_Click({
+        if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $dialog = New-Object Windows.Forms.FolderBrowserDialog
+            $dialog.Description = 'Selecionar pasta de informativos'
+            if ($Script:InformativeFolder -and (Test-Path -LiteralPath $Script:InformativeFolder -PathType Container)) {
+                $dialog.SelectedPath = $Script:InformativeFolder
+            }
+            if ($dialog.ShowDialog() -eq 'OK') {
+                $Script:InformativeFolder = $dialog.SelectedPath
+                $txtInformative2.Text = $Script:InformativeFolder
+                Refresh-Preview
+                Log-Line "Pasta de informativos selecionada."
+            }
+            return
+        }
         $dialog = New-Object Windows.Forms.OpenFileDialog
         $dialog.Filter = 'Arquivos PDF (*.pdf)|*.pdf|Todos os arquivos (*.*)|*.*'
         $dialog.Title = 'Selecionar informativo 2'
@@ -1260,6 +1411,13 @@ $btnInformative2.Add_Click({
     })
 
 $btnClearInformative2.Add_Click({
+        if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
+            $Script:InformativeFolder = ''
+            $txtInformative2.Text = ''
+            Refresh-Preview
+            Log-Line "Pasta de informativos removida."
+            return
+        }
         $Script:InformativeFile2 = ''
         $txtInformative2.Text = ''
         Refresh-Preview
@@ -1286,15 +1444,15 @@ $btnAccounts.Add_Click({
 
 $btnDrafts.Add_Click({
         Refresh-Preview
-        $valid = @($Script:Rows | Where-Object { $_.To })
-        $bad = @($Script:Rows | Where-Object { -not $_.To })
+        $valid = @($Script:Rows | Where-Object { Test-RowReady $_ })
+        $bad = @($Script:Rows | Where-Object { -not (Test-RowReady $_) })
         if ($valid.Count -eq 0) {
-            [Windows.Forms.MessageBox]::Show("Nenhum rascunho pode ser criado. Nenhuma linha possui e-mail preenchido.", 'Rascunhos não criados', 'OK', 'Warning') | Out-Null
-            Log-Line 'Criação de rascunhos bloqueada: nenhuma linha com e-mail.'
+            [Windows.Forms.MessageBox]::Show("Nenhum rascunho pode ser criado. Confira e-mail e anexos obrigatórios na pré-visualização.", 'Rascunhos não criados', 'OK', 'Warning') | Out-Null
+            Log-Line 'Criação de rascunhos bloqueada: nenhuma linha pronta.'
             return
         }
         if ($bad.Count -gt 0) {
-            $answer = [Windows.Forms.MessageBox]::Show("Há $($bad.Count) linha(s) sem e-mail. Criar rascunhos apenas das linhas válidas?", 'Confirmar rascunhos', 'YesNo', 'Warning')
+            $answer = [Windows.Forms.MessageBox]::Show("Há $($bad.Count) linha(s) sem e-mail ou com anexo obrigatório faltando. Criar rascunhos apenas das linhas prontas?", 'Confirmar rascunhos', 'YesNo', 'Warning')
             if ($answer -ne 'Yes') { return }
         }
         $count = 0
@@ -1315,14 +1473,14 @@ $btnDrafts.Add_Click({
 
 $btnSend.Add_Click({
         Refresh-Preview
-        $valid = @($Script:Rows | Where-Object { $_.To })
-        $bad = @($Script:Rows | Where-Object { -not $_.To })
+        $valid = @($Script:Rows | Where-Object { Test-RowReady $_ })
+        $bad = @($Script:Rows | Where-Object { -not (Test-RowReady $_) })
         if ($valid.Count -eq 0) {
-            [Windows.Forms.MessageBox]::Show("Nenhum e-mail está pronto para disparo. Nenhuma linha possui e-mail preenchido.", 'Disparo não iniciado', 'OK', 'Warning') | Out-Null
-            Log-Line 'Disparo bloqueado: nenhuma linha com e-mail.'
+            [Windows.Forms.MessageBox]::Show("Nenhum e-mail está pronto para disparo. Confira e-mail e anexos obrigatórios na pré-visualização.", 'Disparo não iniciado', 'OK', 'Warning') | Out-Null
+            Log-Line 'Disparo bloqueado: nenhuma linha pronta.'
             return
         }
-        $answer = [Windows.Forms.MessageBox]::Show("Enviar $($valid.Count) e-mail(s) agora? Linhas sem e-mail serão ignoradas: $($bad.Count).", 'Confirmar envio', 'YesNo', 'Warning')
+        $answer = [Windows.Forms.MessageBox]::Show("Enviar $($valid.Count) e-mail(s) agora? Linhas sem e-mail ou com anexo obrigatório faltando serão ignoradas: $($bad.Count).", 'Confirmar envio', 'YesNo', 'Warning')
         if ($answer -ne 'Yes') { return }
         $outboxBefore = Get-OutboxCount
         $sentBefore = Get-SentCount

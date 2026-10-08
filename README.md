@@ -13,6 +13,7 @@ Aplicativo local em PowerShell/WinForms para enviar e-mails pelo Outlook instala
 4. Em `Módulo de anexos`, escolha o fluxo:
    - `Resumo Município-UF`: usa arquivos soltos na pasta, encontrados pelo nome do município/UF.
    - `Distribuição por subpastas`: usa uma pasta raiz, como `C:\Users\jonatas.chaves\Downloads\RelatoriosDetalhado\AM`, e anexa todos os arquivos encontrados dentro da subpasta de cada município.
+   - `Resumo + Distribuição + Informativo`: usa três pastas. Em `Resumo`, encontra arquivos soltos por município/UF; em `Distribuição`, entra na subpasta do município e anexa todos os arquivos; em `Informativo`, anexa todos os arquivos da pasta em todos os e-mails.
 5. Selecione a pasta onde estão os documentos.
 6. Selecione os dois arquivos de informativo quando eles também precisarem ser anexados em todos os e-mails.
 7. No modo `Resumo Município-UF`, o nome dos arquivos por município deve conter o município e, quando possível, a UF, por exemplo:
@@ -31,6 +32,7 @@ Aplicativo local em PowerShell/WinForms para enviar e-mails pelo Outlook instala
 - O envio usa a sessão local do Outlook via COM.
 - No modo `Resumo Município-UF`, um coordenador pode receber mais anexos quando houver mais de um arquivo Município-UF correspondente.
 - No modo `Distribuição por subpastas`, todos os arquivos da subpasta do município são anexados, inclusive quando houver mais de um arquivo.
+- No modo `Resumo + Distribuição + Informativo`, cada linha só fica pronta para envio quando encontrar pelo menos 1 resumo, 1 distribuição e 1 informativo. A pré-visualização indica exatamente o item faltante.
 - Os informativos selecionados são anexados em todos os e-mails do lote.
 - A pré-visualização mostra `Sem anexo` quando a linha da planilha não encontrou nenhum arquivo correspondente.
 - O texto padrão do e-mail é enviado em HTML.
