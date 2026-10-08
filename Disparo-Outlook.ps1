@@ -819,8 +819,8 @@ function Refresh-Preview {
 $form = New-Object Windows.Forms.Form
 $form.Text = 'Disparo de e-mails pelo Outlook'
 $form.AutoScaleMode = [Windows.Forms.AutoScaleMode]::None
-$form.Size = New-Object Drawing.Size(1320, 930)
-$form.MinimumSize = New-Object Drawing.Size(1180, 860)
+$form.Size = New-Object Drawing.Size(1320, 840)
+$form.MinimumSize = New-Object Drawing.Size(1180, 780)
 $form.StartPosition = 'CenterScreen'
 
 $title = New-Object Windows.Forms.Label
@@ -1037,7 +1037,7 @@ function Update-AttachmentModeUi {
 $grpPersonal = New-Object Windows.Forms.GroupBox
 $grpPersonal.Text = '4. Personalização'
 $grpPersonal.Location = New-Object Drawing.Point(16, 464)
-$grpPersonal.Size = New-Object Drawing.Size(1268, 258)
+$grpPersonal.Size = New-Object Drawing.Size(1268, 218)
 $form.Controls.Add($grpPersonal)
 
 $lblSubject = New-Object Windows.Forms.Label
@@ -1119,7 +1119,7 @@ foreach ($spec in $editorButtons) {
 
 $webEditor = New-Object Windows.Forms.WebBrowser
 $webEditor.Location = New-Object Drawing.Point(150, 90)
-$webEditor.Size = New-Object Drawing.Size(1100, 96)
+$webEditor.Size = New-Object Drawing.Size(1100, 62)
 $webEditor.ScriptErrorsSuppressed = $true
 $webEditor.AllowWebBrowserDrop = $false
 $webEditor.Add_DocumentCompleted({
@@ -1141,19 +1141,19 @@ Set-EditorHtml $DefaultHtml
 
 $lblDefaultCC = New-Object Windows.Forms.Label
 $lblDefaultCC.Text = 'CC para todos (;):'
-$lblDefaultCC.Location = New-Object Drawing.Point(16, 194)
+$lblDefaultCC.Location = New-Object Drawing.Point(16, 160)
 $lblDefaultCC.Size = New-Object Drawing.Size(130, 22)
 $grpPersonal.Controls.Add($lblDefaultCC)
 
 $txtDefaultCC = New-Object Windows.Forms.TextBox
-$txtDefaultCC.Location = New-Object Drawing.Point(150, 192)
+$txtDefaultCC.Location = New-Object Drawing.Point(150, 158)
 $txtDefaultCC.Size = New-Object Drawing.Size(1100, 24)
 $txtDefaultCC.Text = ''
 $grpPersonal.Controls.Add($txtDefaultCC)
 
 $chkSignature = New-Object Windows.Forms.CheckBox
 $chkSignature.Text = 'Assinatura da sessão do Outlook obrigatória'
-$chkSignature.Location = New-Object Drawing.Point(150, 222)
+$chkSignature.Location = New-Object Drawing.Point(150, 188)
 $chkSignature.Size = New-Object Drawing.Size(360, 22)
 $chkSignature.Checked = $true
 $chkSignature.Enabled = $false
@@ -1162,13 +1162,13 @@ $grpPersonal.Controls.Add($chkSignature)
 $hint = New-Object Windows.Forms.Label
 $hint.Text = 'Use {{Nome}}, {{Cidade}}, {{UF}} ou qualquer {{Coluna}} da planilha.'
 $hint.TextAlign = 'MiddleRight'
-$hint.Location = New-Object Drawing.Point(760, 222)
+$hint.Location = New-Object Drawing.Point(760, 188)
 $hint.Size = New-Object Drawing.Size(490, 22)
 $grpPersonal.Controls.Add($hint)
 
 $grpPreview = New-Object Windows.Forms.GroupBox
 $grpPreview.Text = '5. Pré-visualização'
-$grpPreview.Location = New-Object Drawing.Point(16, 730)
+$grpPreview.Location = New-Object Drawing.Point(16, 690)
 $grpPreview.Size = New-Object Drawing.Size(1268, 94)
 $form.Controls.Add($grpPreview)
 
@@ -1191,7 +1191,7 @@ $grpPreview.Controls.Add($grid)
 
 $grpLog = New-Object Windows.Forms.GroupBox
 $grpLog.Text = 'Log'
-$grpLog.Location = New-Object Drawing.Point(16, 830)
+$grpLog.Location = New-Object Drawing.Point(16, 790)
 $grpLog.Size = New-Object Drawing.Size(900, 46)
 $form.Controls.Add($grpLog)
 
@@ -1204,18 +1204,18 @@ $grpLog.Controls.Add($txtLog)
 
 $lblStatus = New-Object Windows.Forms.Label
 $lblStatus.Text = 'Selecione uma planilha para começar.'
-$lblStatus.Location = New-Object Drawing.Point(930, 830)
+$lblStatus.Location = New-Object Drawing.Point(930, 790)
 $lblStatus.Size = New-Object Drawing.Size(340, 22)
 $form.Controls.Add($lblStatus)
 
 $lblInterval = New-Object Windows.Forms.Label
 $lblInterval.Text = 'Intervalo entre envios (minutos):'
-$lblInterval.Location = New-Object Drawing.Point(520, 222)
+$lblInterval.Location = New-Object Drawing.Point(520, 188)
 $lblInterval.Size = New-Object Drawing.Size(240, 22)
 $grpPersonal.Controls.Add($lblInterval)
 
 $nudIntervalMinutes = New-Object Windows.Forms.NumericUpDown
-$nudIntervalMinutes.Location = New-Object Drawing.Point(690, 220)
+$nudIntervalMinutes.Location = New-Object Drawing.Point(690, 186)
 $nudIntervalMinutes.Size = New-Object Drawing.Size(72, 24)
 $nudIntervalMinutes.Minimum = 0
 $nudIntervalMinutes.Maximum = 1440
@@ -1226,14 +1226,14 @@ $grpPersonal.Controls.Add($nudIntervalMinutes)
 
 $btnDrafts = New-Object Windows.Forms.Button
 $btnDrafts.Text = 'Criar rascunhos'
-$btnDrafts.Location = New-Object Drawing.Point(930, 856)
+$btnDrafts.Location = New-Object Drawing.Point(930, 44)
 $btnDrafts.Size = New-Object Drawing.Size(150, 32)
 $btnDrafts.Enabled = $false
 $form.Controls.Add($btnDrafts)
 
 $btnSend = New-Object Windows.Forms.Button
 $btnSend.Text = 'Disparar e-mails'
-$btnSend.Location = New-Object Drawing.Point(1092, 856)
+$btnSend.Location = New-Object Drawing.Point(1092, 44)
 $btnSend.Size = New-Object Drawing.Size(178, 32)
 $btnSend.Enabled = $false
 $form.Controls.Add($btnSend)
