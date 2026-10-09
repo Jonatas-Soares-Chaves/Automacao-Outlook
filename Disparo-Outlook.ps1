@@ -17,6 +17,9 @@ $Script:Sheets = @()
 $Script:SelectedSheet = ''
 $Script:Outlook = $null
 $Script:LogPath = Join-Path $PSScriptRoot 'disparo-outlook.log'
+$Script:FlatFileCache = @{}
+$Script:DirectoryCache = @{}
+$Script:DirectoryFileCache = @{}
 
 $DefaultSubject = 'ENEM - 26 - RESUMO DE CONTRATAÇÃO - {{Cidade}}- {{UF}}'
 $DefaultCC = @()
@@ -415,6 +418,45 @@ function Infer-UF-FromPath {
     return ''
 }
 
+function Clear-AttachmentCache {
+    $Script:FlatFileCache = @{}
+    $Script:DirectoryCache = @{}
+    $Script:DirectoryFileCache = @{}
+}
+
+function Get-CachedFlatFiles {
+    param([string]$RootFolder)
+    if ([string]::IsNullOrWhiteSpace($RootFolder)) { return @() }
+    if (-not (Test-Path -LiteralPath $RootFolder -PathType Container)) { return @() }
+    $key = $RootFolder.ToUpperInvariant()
+    if (-not $Script:FlatFileCache.ContainsKey($key)) {
+        $Script:FlatFileCache[$key] = @(Get-ChildItem -LiteralPath $RootFolder -File -Recurse | Sort-Object FullName)
+    }
+    return @($Script:FlatFileCache[$key])
+}
+
+function Get-CachedDirectories {
+    param([string]$RootFolder)
+    if ([string]::IsNullOrWhiteSpace($RootFolder)) { return @() }
+    if (-not (Test-Path -LiteralPath $RootFolder -PathType Container)) { return @() }
+    $key = $RootFolder.ToUpperInvariant()
+    if (-not $Script:DirectoryCache.ContainsKey($key)) {
+        $Script:DirectoryCache[$key] = @(Get-ChildItem -LiteralPath $RootFolder -Directory | Sort-Object Name)
+    }
+    return @($Script:DirectoryCache[$key])
+}
+
+function Get-CachedDirectoryFiles {
+    param([string]$Folder)
+    if ([string]::IsNullOrWhiteSpace($Folder)) { return @() }
+    if (-not (Test-Path -LiteralPath $Folder -PathType Container)) { return @() }
+    $key = $Folder.ToUpperInvariant()
+    if (-not $Script:DirectoryFileCache.ContainsKey($key)) {
+        $Script:DirectoryFileCache[$key] = @(Get-ChildItem -LiteralPath $Folder -File -Recurse | Sort-Object FullName)
+    }
+    return @($Script:DirectoryFileCache[$key])
+}
+
 function Find-Attachments {
     param([string]$City, [string]$UF)
     if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
@@ -429,13 +471,11 @@ function Find-Attachments {
 function Find-FlatMunicipalFiles {
     param([string]$RootFolder, [string]$City, [string]$UF)
     $foundFiles = @()
-    if ([string]::IsNullOrWhiteSpace($RootFolder)) { return $foundFiles }
-    if (-not (Test-Path -LiteralPath $RootFolder -PathType Container)) { return $foundFiles }
     $cityNorm = Normalize-Text $City
     $ufNorm = Normalize-Text $UF
-    foreach ($file in Get-ChildItem -LiteralPath $RootFolder -File -Recurse) {
+    if (-not $cityNorm) { return $foundFiles }
+    foreach ($file in Get-CachedFlatFiles $RootFolder) {
         $baseNorm = Normalize-Text $file.BaseName
-        if (-not $cityNorm) { continue }
         $cityOk = $baseNorm.StartsWith($cityNorm) -or $baseNorm.Contains($cityNorm)
         $ufOk = $true
         if ($ufNorm) { $ufOk = ($baseNorm -match "(^| )$([regex]::Escape($ufNorm))( |$)") -or $baseNorm.EndsWith(' ' + $ufNorm) }
@@ -447,12 +487,10 @@ function Find-FlatMunicipalFiles {
 function Find-DistributionAttachments {
     param([string]$City, [string]$RootFolder = $Script:AttachmentFolder)
     $foundFiles = @()
-    if ([string]::IsNullOrWhiteSpace($RootFolder)) { return $foundFiles }
-    if (-not (Test-Path -LiteralPath $RootFolder -PathType Container)) { return $foundFiles }
     $cityNorm = Normalize-Text $City
     if (-not $cityNorm) { return $foundFiles }
 
-    $folders = @(Get-ChildItem -LiteralPath $RootFolder -Directory)
+    $folders = @(Get-CachedDirectories $RootFolder)
     $selectedFolder = $folders | Where-Object { (Normalize-Text $_.Name) -eq $cityNorm } | Select-Object -First 1
     if (-not $selectedFolder) {
         $selectedFolder = $folders | Where-Object {
@@ -462,7 +500,7 @@ function Find-DistributionAttachments {
     }
     if (-not $selectedFolder) { return $foundFiles }
 
-    foreach ($file in Get-ChildItem -LiteralPath $selectedFolder.FullName -File -Recurse | Sort-Object FullName) {
+    foreach ($file in Get-CachedDirectoryFiles $selectedFolder.FullName) {
         $foundFiles += $file.FullName
     }
     return $foundFiles
@@ -793,6 +831,10 @@ function Test-RowReady {
 function Refresh-Preview {
     $grid.Rows.Clear()
     if (-not $cmbEmail.Text -or -not $cmbCity.Text) { return }
+    $form.UseWaitCursor = $true
+    [Windows.Forms.Application]::DoEvents()
+    $grid.SuspendLayout()
+    try {
     $Script:Rows = Build-PreparedRows $cmbEmail.Text $cmbName.Text $cmbCity.Text $cmbUF.Text $cmbCC.Text
     foreach ($row in $Script:Rows) {
         $status = if (-not $row.To) {
@@ -814,6 +856,11 @@ function Refresh-Preview {
         [void]$grid.Rows.Add($row.Line, $row.City, $row.UF, $row.Name, $row.To, (Merge-Addresses $row.CC $txtDefaultCC.Text), $row.Attachments.Count, $status)
     }
     $lblStatus.Text = "$($Script:Rows.Count) linha(s) preparada(s)."
+    }
+    finally {
+        $grid.ResumeLayout()
+        $form.UseWaitCursor = $false
+    }
 }
 
 $form = New-Object Windows.Forms.Form
@@ -1301,6 +1348,7 @@ $btnAttachmentFolder.Add_Click({
         if ($dialog.ShowDialog() -eq 'OK') {
             $Script:AttachmentFolder = $dialog.SelectedPath
             $txtAttachmentFolder.Text = $Script:AttachmentFolder
+            Clear-AttachmentCache
             Refresh-Preview
             Log-Line "Pasta de anexos selecionada ($($Script:AttachmentMode))."
         }
@@ -1308,6 +1356,7 @@ $btnAttachmentFolder.Add_Click({
 
 $cmbAttachmentMode.Add_SelectedIndexChanged({
         $Script:AttachmentMode = [string]$cmbAttachmentMode.SelectedItem
+        Clear-AttachmentCache
         if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
             $defaultSummaryFolder = 'C:\Users\jonatas.chaves\Downloads\RESUMOS.CE\RESUMOS.CE'
             $defaultDistributionFolder = 'C:\Users\jonatas.chaves\Downloads\CE DISTRIBUIÇÃO\CE'
@@ -1338,6 +1387,7 @@ $cmbAttachmentMode.Add_SelectedIndexChanged({
 $btnClearFolder.Add_Click({
         $Script:AttachmentFolder = ''
         $txtAttachmentFolder.Text = ''
+        Clear-AttachmentCache
         Refresh-Preview
         Log-Line "Pasta de anexos removida."
     })
@@ -1352,6 +1402,7 @@ $btnInformative1.Add_Click({
             if ($dialog.ShowDialog() -eq 'OK') {
                 $Script:DistributionFolder = $dialog.SelectedPath
                 $txtInformative1.Text = $Script:DistributionFolder
+                Clear-AttachmentCache
                 Refresh-Preview
                 Log-Line "Pasta de distribuição selecionada."
             }
@@ -1364,6 +1415,7 @@ $btnInformative1.Add_Click({
         if ($dialog.ShowDialog() -eq 'OK') {
             $Script:InformativeFile1 = $dialog.FileName
             $txtInformative1.Text = $Script:InformativeFile1
+            Clear-AttachmentCache
             Refresh-Preview
             Log-Line "Informativo 1 selecionado."
         }
@@ -1373,12 +1425,14 @@ $btnClearInformative1.Add_Click({
         if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
             $Script:DistributionFolder = ''
             $txtInformative1.Text = ''
+            Clear-AttachmentCache
             Refresh-Preview
             Log-Line "Pasta de distribuição removida."
             return
         }
         $Script:InformativeFile1 = ''
         $txtInformative1.Text = ''
+        Clear-AttachmentCache
         Refresh-Preview
         Log-Line "Informativo 1 removido."
     })
@@ -1393,6 +1447,7 @@ $btnInformative2.Add_Click({
             if ($dialog.ShowDialog() -eq 'OK') {
                 $Script:InformativeFolder = $dialog.SelectedPath
                 $txtInformative2.Text = $Script:InformativeFolder
+                Clear-AttachmentCache
                 Refresh-Preview
                 Log-Line "Pasta de informativos selecionada."
             }
@@ -1405,6 +1460,7 @@ $btnInformative2.Add_Click({
         if ($dialog.ShowDialog() -eq 'OK') {
             $Script:InformativeFile2 = $dialog.FileName
             $txtInformative2.Text = $Script:InformativeFile2
+            Clear-AttachmentCache
             Refresh-Preview
             Log-Line "Informativo 2 selecionado."
         }
@@ -1414,12 +1470,14 @@ $btnClearInformative2.Add_Click({
         if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
             $Script:InformativeFolder = ''
             $txtInformative2.Text = ''
+            Clear-AttachmentCache
             Refresh-Preview
             Log-Line "Pasta de informativos removida."
             return
         }
         $Script:InformativeFile2 = ''
         $txtInformative2.Text = ''
+        Clear-AttachmentCache
         Refresh-Preview
         Log-Line "Informativo 2 removido."
     })
