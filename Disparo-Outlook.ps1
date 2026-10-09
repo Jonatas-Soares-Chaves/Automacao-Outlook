@@ -1162,8 +1162,8 @@ $grpPersonal.Controls.Add($chkSignature)
 $hint = New-Object Windows.Forms.Label
 $hint.Text = 'Use {{Nome}}, {{Cidade}}, {{UF}} ou qualquer {{Coluna}} da planilha.'
 $hint.TextAlign = 'MiddleRight'
-$hint.Location = New-Object Drawing.Point(760, 188)
-$hint.Size = New-Object Drawing.Size(490, 22)
+$hint.Location = New-Object Drawing.Point(850, 188)
+$hint.Size = New-Object Drawing.Size(400, 22)
 $grpPersonal.Controls.Add($hint)
 
 $grpPreview = New-Object Windows.Forms.GroupBox
@@ -1209,14 +1209,14 @@ $lblStatus.Size = New-Object Drawing.Size(340, 22)
 $form.Controls.Add($lblStatus)
 
 $lblInterval = New-Object Windows.Forms.Label
-$lblInterval.Text = 'Intervalo entre envios (minutos):'
+$lblInterval.Text = 'Intervalo entre envios (min):'
 $lblInterval.Location = New-Object Drawing.Point(520, 188)
-$lblInterval.Size = New-Object Drawing.Size(240, 22)
+$lblInterval.Size = New-Object Drawing.Size(205, 22)
 $grpPersonal.Controls.Add($lblInterval)
 
 $nudIntervalMinutes = New-Object Windows.Forms.NumericUpDown
-$nudIntervalMinutes.Location = New-Object Drawing.Point(690, 186)
-$nudIntervalMinutes.Size = New-Object Drawing.Size(72, 24)
+$nudIntervalMinutes.Location = New-Object Drawing.Point(730, 185)
+$nudIntervalMinutes.Size = New-Object Drawing.Size(96, 28)
 $nudIntervalMinutes.Minimum = 0
 $nudIntervalMinutes.Maximum = 1440
 $nudIntervalMinutes.DecimalPlaces = 1
