@@ -893,7 +893,7 @@ $grpCols = New-Object Windows.Forms.GroupBox
 $grpCols.Text = '2. Colunas da planilha'
 $grpCols.Location = New-Object Drawing.Point(16, 204)
 $grpCols.Size = New-Object Drawing.Size(1268, 86)
-$form.Controls.Add($grpCols)
+$grpCols.Visible = $false
 
 $labels = @('E-mail *', 'Cópia (CC)', 'Coordenador/Nome', 'Município/Cidade *', 'UF')
 $combos = @()
@@ -912,8 +912,8 @@ for ($i = 0; $i -lt $labels.Count; $i++) {
 $cmbEmail, $cmbCC, $cmbName, $cmbCity, $cmbUF = $combos
 
 $grpAttach = New-Object Windows.Forms.GroupBox
-$grpAttach.Text = '3. Anexos (Opcionais)'
-$grpAttach.Location = New-Object Drawing.Point(16, 298)
+$grpAttach.Text = '2. Anexos (Opcionais)'
+$grpAttach.Location = New-Object Drawing.Point(16, 204)
 $grpAttach.Size = New-Object Drawing.Size(1268, 158)
 $form.Controls.Add($grpAttach)
 
@@ -1013,7 +1013,7 @@ if (Test-Path -LiteralPath $defaultInformative1 -PathType Leaf) {
 
 function Update-AttachmentModeUi {
     if ($Script:AttachmentMode -eq 'Resumo + Distribuição + Informativo') {
-        $grpAttach.Text = '3. Anexos por município'
+        $grpAttach.Text = '2. Anexos por município'
         $lblAttachmentFolder.Text = 'Resumo:'
         $lblInformative1.Text = 'Distribuição:'
         $lblInformative2.Text = 'Informativo:'
@@ -1024,7 +1024,7 @@ function Update-AttachmentModeUi {
         return
     }
 
-    $grpAttach.Text = '3. Anexos (Opcionais)'
+    $grpAttach.Text = '2. Anexos (Opcionais)'
     $lblAttachmentFolder.Text = 'Pasta dos arquivos:'
     $lblInformative1.Text = 'Informativo 1:'
     $lblInformative2.Text = 'Informativo 2:'
@@ -1035,8 +1035,8 @@ function Update-AttachmentModeUi {
 }
 
 $grpPersonal = New-Object Windows.Forms.GroupBox
-$grpPersonal.Text = '4. Personalização'
-$grpPersonal.Location = New-Object Drawing.Point(16, 464)
+$grpPersonal.Text = '3. Personalização'
+$grpPersonal.Location = New-Object Drawing.Point(16, 370)
 $grpPersonal.Size = New-Object Drawing.Size(1268, 218)
 $form.Controls.Add($grpPersonal)
 
@@ -1167,14 +1167,14 @@ $hint.Size = New-Object Drawing.Size(400, 22)
 $grpPersonal.Controls.Add($hint)
 
 $grpPreview = New-Object Windows.Forms.GroupBox
-$grpPreview.Text = '5. Pré-visualização'
-$grpPreview.Location = New-Object Drawing.Point(16, 690)
-$grpPreview.Size = New-Object Drawing.Size(1268, 94)
+$grpPreview.Text = '4. Pré-visualização'
+$grpPreview.Location = New-Object Drawing.Point(16, 596)
+$grpPreview.Size = New-Object Drawing.Size(1268, 190)
 $form.Controls.Add($grpPreview)
 
 $grid = New-Object Windows.Forms.DataGridView
 $grid.Location = New-Object Drawing.Point(10, 22)
-$grid.Size = New-Object Drawing.Size(1246, 62)
+$grid.Size = New-Object Drawing.Size(1246, 158)
 $grid.AllowUserToAddRows = $false
 $grid.ReadOnly = $true
 $grid.AutoSizeColumnsMode = 'Fill'
@@ -1191,7 +1191,7 @@ $grpPreview.Controls.Add($grid)
 
 $grpLog = New-Object Windows.Forms.GroupBox
 $grpLog.Text = 'Log'
-$grpLog.Location = New-Object Drawing.Point(16, 790)
+$grpLog.Location = New-Object Drawing.Point(16, 792)
 $grpLog.Size = New-Object Drawing.Size(900, 46)
 $form.Controls.Add($grpLog)
 
@@ -1204,7 +1204,7 @@ $grpLog.Controls.Add($txtLog)
 
 $lblStatus = New-Object Windows.Forms.Label
 $lblStatus.Text = 'Selecione uma planilha para começar.'
-$lblStatus.Location = New-Object Drawing.Point(930, 790)
+$lblStatus.Location = New-Object Drawing.Point(930, 792)
 $lblStatus.Size = New-Object Drawing.Size(340, 22)
 $form.Controls.Add($lblStatus)
 
