@@ -1,6 +1,8 @@
 ﻿Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName Microsoft.VisualBasic
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
@@ -189,8 +191,167 @@ function Get-OutlookAccounts {
     return $accounts | Where-Object { $_ } | Sort-Object -Unique
 }
 
+function Read-ZipEntryText {
+    param($Zip, [string]$Name)
+    $entry = $Zip.GetEntry($Name)
+    if (-not $entry) { return $null }
+    $stream = $entry.Open()
+    $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+    try {
+        return $reader.ReadToEnd()
+    }
+    finally {
+        $reader.Close()
+        $stream.Close()
+    }
+}
+
+function Open-XlsxArchive {
+    param([string]$Path)
+    $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+    return [System.IO.Compression.ZipArchive]::new($stream, [System.IO.Compression.ZipArchiveMode]::Read, $false)
+}
+
+function Get-XlsxSharedStrings {
+    param($Zip)
+    $text = Read-ZipEntryText -Zip $Zip -Name 'xl/sharedStrings.xml'
+    if (-not $text) { return @() }
+    [xml]$xml = $text
+    $strings = @()
+    foreach ($si in $xml.GetElementsByTagName('si')) {
+        $parts = @()
+        foreach ($node in $si.GetElementsByTagName('t')) { $parts += $node.InnerText }
+        $strings += ($parts -join '')
+    }
+    return $strings
+}
+
+function Convert-XlsxColumnToIndex {
+    param([string]$Reference)
+    $letters = ([regex]::Match($Reference, '^[A-Z]+')).Value
+    $index = 0
+    foreach ($ch in $letters.ToCharArray()) {
+        $index = ($index * 26) + ([int][char]$ch - [int][char]'A' + 1)
+    }
+    return $index
+}
+
+function Get-XlsxCellText {
+    param($Cell, [string[]]$SharedStrings)
+    $type = [string]$Cell.t
+    $valueNode = $Cell.GetElementsByTagName('v') | Select-Object -First 1
+    $value = if ($valueNode) { [string]$valueNode.InnerText } else { '' }
+    if ($type -eq 's') {
+        $idx = 0
+        if ([int]::TryParse($value, [ref]$idx) -and $idx -ge 0 -and $idx -lt $SharedStrings.Count) {
+            return [string]$SharedStrings[$idx]
+        }
+        return ''
+    }
+    if ($type -eq 'inlineStr') {
+        $parts = @()
+        foreach ($node in $Cell.GetElementsByTagName('t')) { $parts += $node.InnerText }
+        return ($parts -join '')
+    }
+    return $value
+}
+
+function Get-XlsxWorkbookInfo {
+    param([string]$Path)
+    $zip = Open-XlsxArchive -Path $Path
+    try {
+        [xml]$workbook = Read-ZipEntryText -Zip $zip -Name 'xl/workbook.xml'
+        [xml]$rels = Read-ZipEntryText -Zip $zip -Name 'xl/_rels/workbook.xml.rels'
+        $relMap = @{}
+        foreach ($rel in $rels.Relationships.Relationship) {
+            $target = [string]$rel.Target
+            if ($target.StartsWith('/')) { $target = $target.TrimStart('/') }
+            elseif (-not $target.StartsWith('xl/')) { $target = "xl/$target" }
+            $relMap[[string]$rel.Id] = $target
+        }
+        $sheets = @()
+        foreach ($sheet in $workbook.GetElementsByTagName('sheet')) {
+            $rid = $sheet.GetAttribute('id', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')
+            $sheets += [pscustomobject]@{
+                Name = [string]$sheet.name
+                Path = [string]$relMap[$rid]
+            }
+        }
+        return $sheets
+    }
+    finally {
+        if ($zip) { $zip.Dispose() }
+    }
+}
+
+function Read-XlsxRows {
+    param([string]$Path, [string]$SheetName)
+    $zip = Open-XlsxArchive -Path $Path
+    $items = New-Object System.Collections.Generic.List[object]
+    try {
+        $sheets = Get-XlsxWorkbookInfo -Path $Path
+        $sheet = $sheets | Where-Object { -not $SheetName -or $_.Name -eq $SheetName } | Select-Object -First 1
+        if (-not $sheet) { throw "Aba '$SheetName' não encontrada." }
+        $sheetText = Read-ZipEntryText -Zip $zip -Name $sheet.Path
+        if (-not $sheetText) { throw "Não foi possível ler a aba '$($sheet.Name)'." }
+        [xml]$sheetXml = $sheetText
+        $sharedStrings = Get-XlsxSharedStrings -Zip $zip
+        $rows = $sheetXml.GetElementsByTagName('row')
+        $headerMap = $null
+        $headers = @()
+        $headerRowNumber = 0
+
+        foreach ($row in $rows) {
+            $cells = @{}
+            $maxCol = 0
+            foreach ($cell in $row.GetElementsByTagName('c')) {
+                $index = Convert-XlsxColumnToIndex ([string]$cell.r)
+                if ($index -le 0) { continue }
+                if ($index -gt $maxCol) { $maxCol = $index }
+                $cells[$index] = (Get-XlsxCellText -Cell $cell -SharedStrings $sharedStrings).Trim()
+            }
+            if (-not $headerMap) {
+                $hasHeader = $false
+                for ($c = 1; $c -le $maxCol; $c++) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$cells[$c])) { $hasHeader = $true; break }
+                }
+                if (-not $hasHeader) { continue }
+                for ($c = 1; $c -le $maxCol; $c++) {
+                    $header = [string]$cells[$c]
+                    if ([string]::IsNullOrWhiteSpace($header)) { $header = "Coluna$c" }
+                    $headers += $header.Trim()
+                }
+                $headerMap = $cells
+                $headerRowNumber = [int]$row.r
+                continue
+            }
+
+            $values = @{}
+            $hasData = $false
+            for ($c = 1; $c -le $headers.Count; $c++) {
+                $value = [string]$cells[$c]
+                if (-not [string]::IsNullOrWhiteSpace($value)) { $hasData = $true }
+                $values[$headers[$c - 1]] = $value.Trim()
+            }
+            if ($hasData) {
+                $line = [int]$row.r
+                if ($line -le $headerRowNumber) { $line = $headerRowNumber + $items.Count + 1 }
+                $items.Add([pscustomobject]@{ Line = $line; Values = $values }) | Out-Null
+            }
+        }
+        return [pscustomobject]@{ Headers = $headers; Rows = $items }
+    }
+    finally {
+        if ($zip) { $zip.Dispose() }
+    }
+}
+
 function Read-WorkbookRows {
     param([string]$Path, [string]$SheetName)
+    if ([System.IO.Path]::GetExtension($Path).ToLowerInvariant() -eq '.xlsx') {
+        return Read-XlsxRows -Path $Path -SheetName $SheetName
+    }
     $excel = $null
     $wb = $null
     $items = New-Object System.Collections.Generic.List[object]
@@ -207,9 +368,10 @@ function Read-WorkbookRows {
         $used = $ws.UsedRange
         $rowCount = $used.Rows.Count
         $colCount = $used.Columns.Count
+        $data = $used.Value2
         $headers = @()
         for ($c = 1; $c -le $colCount; $c++) {
-            $header = [string]$used.Cells.Item(1, $c).Text
+            $header = if ($rowCount -eq 1 -and $colCount -eq 1) { [string]$data } else { [string]$data.GetValue(1, $c) }
             if ([string]::IsNullOrWhiteSpace($header)) { $header = "Coluna$c" }
             $headers += $header.Trim()
         }
@@ -217,7 +379,8 @@ function Read-WorkbookRows {
             $values = @{}
             $hasData = $false
             for ($c = 1; $c -le $colCount; $c++) {
-                $value = [string]$used.Cells.Item($r, $c).Text
+                $rawValue = if ($rowCount -eq 1 -and $colCount -eq 1) { $null } else { $data.GetValue($r, $c) }
+                $value = if ($null -eq $rawValue) { '' } else { [string]$rawValue }
                 if (-not [string]::IsNullOrWhiteSpace($value)) { $hasData = $true }
                 $values[$headers[$c - 1]] = $value.Trim()
             }
@@ -237,6 +400,9 @@ function Read-WorkbookRows {
 
 function Get-SheetNames {
     param([string]$Path)
+    if ([System.IO.Path]::GetExtension($Path).ToLowerInvariant() -eq '.xlsx') {
+        return @(Get-XlsxWorkbookInfo -Path $Path | ForEach-Object { $_.Name })
+    }
     $excel = $null
     $wb = $null
     try {
