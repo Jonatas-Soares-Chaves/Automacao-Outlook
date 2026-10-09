@@ -828,14 +828,30 @@ function Test-RowReady {
     return $true
 }
 
+function Resolve-Column {
+    param($Combo, [string[]]$Hints)
+    if ($Combo -and -not [string]::IsNullOrWhiteSpace($Combo.Text)) { return [string]$Combo.Text }
+    $column = Pick-Column $Script:Columns $Hints
+    if ($Combo -and $column) { $Combo.Text = $column }
+    return $column
+}
+
 function Refresh-Preview {
     $grid.Rows.Clear()
-    if (-not $cmbEmail.Text -or -not $cmbCity.Text) { return }
+    $emailColumn = Resolve-Column $cmbEmail @('Email', 'E-mail', 'E mail', 'E_mail', 'E-mail *')
+    $nameColumn = Resolve-Column $cmbName @('Nome', 'Coordenador', 'Coordenador/Nome', 'Coordenador Nome')
+    $cityColumn = Resolve-Column $cmbCity @('Cidade', 'Município', 'Municipio', 'Município/Cidade', 'Municipio/Cidade', 'Cidade/Município', 'Cidade Municipio')
+    $ufColumn = Resolve-Column $cmbUF @('UF', 'Estado')
+    $ccColumn = Resolve-Column $cmbCC @('CC', 'Cópia', 'Copia', 'Cópia (CC)', 'Copia CC')
+    if (-not $emailColumn -or -not $cityColumn) {
+        $lblStatus.Text = 'Colunas de e-mail ou município não encontradas na planilha.'
+        return
+    }
     $form.UseWaitCursor = $true
     [Windows.Forms.Application]::DoEvents()
     $grid.SuspendLayout()
     try {
-    $Script:Rows = Build-PreparedRows $cmbEmail.Text $cmbName.Text $cmbCity.Text $cmbUF.Text $cmbCC.Text
+    $Script:Rows = Build-PreparedRows $emailColumn $nameColumn $cityColumn $ufColumn $ccColumn
     foreach ($row in $Script:Rows) {
         $status = if (-not $row.To) {
             'Sem e-mail'
@@ -941,6 +957,7 @@ $grpCols.Text = '2. Colunas da planilha'
 $grpCols.Location = New-Object Drawing.Point(16, 204)
 $grpCols.Size = New-Object Drawing.Size(1268, 86)
 $grpCols.Visible = $false
+$form.Controls.Add($grpCols)
 
 $labels = @('E-mail *', 'Cópia (CC)', 'Coordenador/Nome', 'Município/Cidade *', 'UF')
 $combos = @()
@@ -1314,6 +1331,7 @@ $loadData = {
         $btnDrafts.Enabled = $true
         $btnSend.Enabled = $true
         Log-Line "Planilha carregada: $($Script:RawRows.Count) linha(s)."
+        Log-Line "Colunas detectadas: Email='$($cmbEmail.Text)', Nome='$($cmbName.Text)', Cidade='$($cmbCity.Text)', UF='$($cmbUF.Text)', CC='$($cmbCC.Text)'."
     }
     catch {
         [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Erro ao carregar planilha', 'OK', 'Error') | Out-Null
